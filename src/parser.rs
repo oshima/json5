@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::Chars;
+use std::str::FromStr;
 
 use crate::error::Error;
 use crate::value::Value;
@@ -18,7 +19,9 @@ impl<'a> Parser<'a> {
     }
 
     fn expect(&mut self, ch: char) -> Result<(), Error> {
-        if self.ch != ch {
+        if self.ch == '\0' {
+            return Err(Error::UnexpectedEndOfJson);
+        } else if self.ch != ch {
             return Err(Error::UnexpectedCharacter);
         }
         self.next();
@@ -77,7 +80,7 @@ impl<'a> Parser<'a> {
         match self.ch {
             'n' => self.parse_null(),
             't' | 'f' => self.parse_boolean(),
-            '+' | '-' | '0'..='9' => self.parse_number(),
+            '+' | '-' | '.' | '0'..='9' | 'I' | 'N' => self.parse_number(),
             '"' => self.parse_string(),
             '[' => self.parse_array(),
             '{' => self.parse_object(),
@@ -111,18 +114,58 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_number(&mut self) -> Result<Value, Error> {
-        let mut n = 0;
-        let sign = if self.ch == '-' { -1 } else { 1 };
+        let mut s = String::new();
+        let mut is_float = false;
 
         if self.ch == '+' || self.ch == '-' {
+            s.push(self.ch);
             self.next();
         }
-        while self.ch.is_ascii_digit() {
-            n *= 10;
-            n += (self.ch as i32) - ('0' as i32);
+
+        if self.ch == 'I' {
+            self.next();
+            self.expect('n')?;
+            self.expect('f')?;
+            self.expect('i')?;
+            self.expect('n')?;
+            self.expect('i')?;
+            self.expect('t')?;
+            self.expect('y')?;
+            return if s == "-" {
+                Ok(Value::Float(std::f64::NEG_INFINITY))
+            } else {
+                Ok(Value::Float(std::f64::INFINITY))
+            }
+        }
+
+        if self.ch == 'N' {
+            self.next();
+            self.expect('a')?;
+            self.expect('N')?;
+            return Ok(Value::Float(std::f64::NAN))
+        }
+
+        loop {
+            match self.ch {
+                '+' | '-' | '0'..='9' => {},
+                '.' | 'E' | 'e' => is_float = true,
+                _ => break,
+            }
+            s.push(self.ch);
             self.next();
         }
-        Ok(Value::Number(sign * n))
+
+        if is_float {
+            match f64::from_str(&s) {
+                Ok(f) => Ok(Value::Float(f)),
+                Err(_) => Err(Error::UnparseableNumber),
+            }
+        } else {
+            match i32::from_str(&s) {
+                Ok(i) => Ok(Value::Integer(i)),
+                Err(_) => Err(Error::UnparseableNumber),
+            }
+        }
     }
 
     fn parse_string(&mut self) -> Result<Value, Error> {

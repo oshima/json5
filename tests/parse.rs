@@ -10,9 +10,14 @@ fn it_works() {
     };
 
     match parse("-42".to_string()) {
-        Ok(Value::Number(-42)) => (),
+        Ok(Value::Integer(-42)) => (),
         _ => panic!(),
     };
+
+    assert_eq!(parse("1.23".to_string()), Ok(Value::Float(1.23)));
+    assert_eq!(parse("-Infinity".to_string()), Ok(Value::Float(std::f64::NEG_INFINITY)));
+    assert_eq!(parse("-2.3e2".to_string()), Ok(Value::Float(-230.0)));
+    assert_eq!(parse("4.2e-2".to_string()), Ok(Value::Float(0.042)));
 
     match parse("\"foo bar\"".to_string()) {
         Ok(Value::String(s)) => assert_eq!(s, "foo bar".to_string()),
@@ -23,7 +28,7 @@ fn it_works() {
         Ok(Value::Array(v)) => {
             assert_eq!(v.len(), 2);
             match v[0] {
-                Value::Number(1) => (),
+                Value::Integer(1) => (),
                 _ => panic!(),
             }
             match v[1] {
@@ -48,7 +53,7 @@ fn it_works() {
         Ok(Value::Object(m)) => {
             assert_eq!(m.len(), 2);
             match m.get("foo") {
-                Some(Value::Number(1)) => (),
+                Some(Value::Integer(1)) => (),
                 _ => panic!(),
             }
             match m.get("bar") {

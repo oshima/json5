@@ -11,7 +11,17 @@ pub fn parse(json: String) -> Result<Value, Error> {
         chars: json.chars(),
         ch: '\0',
     };
+
     parser.next();
     parser.skip_comments()?;
-    parser.parse_value()
+
+    let value = parser.parse_value()?;
+
+    parser.skip_comments()?;
+
+    if parser.ch != '\0' {
+        Err(Error::UnexpectedCharacter)
+    } else {
+        Ok(value)
+    }
 }

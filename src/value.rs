@@ -1,13 +1,50 @@
 use std::collections::HashMap;
 use std::ops::Index;
 
+#[derive(Debug)]
 pub enum Value {
     Null,
     Boolean(bool),
-    Number(i32),
+    Integer(i32),
+    Float(f64),
     String(String),
     Array(Vec<Value>),
     Object(HashMap<String, Value>),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::Null => match other {
+                Self::Null => true,
+                _ => false,
+            },
+            Self::Boolean(b1) => match other {
+                Self::Boolean(b2) => b1 == b2,
+                _ => false,
+            },
+            Self::Integer(i1) => match other {
+                Self::Integer(i2) => i1 == i2,
+                _ => false,
+            },
+            Self::Float(f1) => match other {
+                Self::Float(f2) => f1 == f2,
+                _ => false,
+            },
+            Self::String(s1) => match other {
+                Self::String(s2) => s1 == s2,
+                _ => false,
+            },
+            Self::Array(v1) => match other {
+                Self::Array(v2) => v1 == v2,
+                _ => false,
+            },
+            Self::Object(m1) => match other {
+                Self::Object(m2) => m1 == m2,
+                _ => false,
+            },
+        }
+    }
 }
 
 impl Index<usize> for Value {
@@ -49,7 +86,14 @@ impl Value {
 
     pub fn as_i32(&self) -> Option<i32> {
         match self {
-            Self::Number(i) => Some(*i),
+            Self::Integer(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            Self::Float(f) => Some(*f),
             _ => None,
         }
     }
