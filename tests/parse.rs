@@ -1,66 +1,67 @@
 extern crate json5;
 
-use json5::{parse, Value};
+use json5::{parse, Error, Value};
+use std::collections::HashMap;
 
 #[test]
 fn it_works() {
-    match parse("// this is a comment\nnull".to_string()) {
-        Ok(Value::Null) => (),
-        _ => panic!(),
-    };
+    assert_eq!(parse("null"), Ok(Value::Null));
 
-    match parse("-42".to_string()) {
-        Ok(Value::Integer(-42)) => (),
-        _ => panic!(),
-    };
+    assert_eq!(parse("true"), Ok(Value::Boolean(true)));
+    assert_eq!(parse("false"), Ok(Value::Boolean(false)));
 
-    assert_eq!(parse("1.23".to_string()), Ok(Value::Float(1.23)));
-    assert_eq!(parse("-Infinity".to_string()), Ok(Value::Float(std::f64::NEG_INFINITY)));
-    assert_eq!(parse("-2.3e2".to_string()), Ok(Value::Float(-230.0)));
-    assert_eq!(parse("4.2e-2".to_string()), Ok(Value::Float(0.042)));
+    assert_eq!(parse("0"), Ok(Value::Integer(0)));
+    assert_eq!(parse("00"), Err(Error::UnparseableNumber));
+    assert_eq!(parse("42"), Ok(Value::Integer(42)));
+    assert_eq!(parse("-999"), Ok(Value::Integer(-999)));
+    assert_eq!(parse("0x1a"), Ok(Value::Integer(26)));
+    assert_eq!(parse("0X1A"), Ok(Value::Integer(26)));
+    assert_eq!(parse("-0x0f"), Ok(Value::Integer(-15)));
 
-    match parse("\"foo bar\"".to_string()) {
-        Ok(Value::String(s)) => assert_eq!(s, "foo bar".to_string()),
-        _ => panic!(),
-    };
+    assert_eq!(parse("0.0"), Ok(Value::Float(0.0)));
+    assert_eq!(parse("0."), Ok(Value::Float(0.0)));
+    assert_eq!(parse(".0"), Ok(Value::Float(0.0)));
+    assert_eq!(parse("12.3"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("1.23e1"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("1.23e+1"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("123e-1"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("1.23E1"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("-9.9e2"), Ok(Value::Float(-990.0)));
+    assert_eq!(parse("Infinity"), Ok(Value::Float(std::f64::INFINITY)));
+    assert_eq!(parse("+Infinity"), Ok(Value::Float(std::f64::INFINITY)));
+    assert_eq!(parse("-Infinity"), Ok(Value::Float(std::f64::NEG_INFINITY)));
+    assert_eq!(parse("NaN").unwrap().as_f64().unwrap().is_nan(), true);
+    assert_eq!(parse("+NaN").unwrap().as_f64().unwrap().is_nan(), true);
+    assert_eq!(parse("-NaN").unwrap().as_f64().unwrap().is_nan(), true);
 
-    match parse("[1, true]".to_string()) {
-        Ok(Value::Array(v)) => {
-            assert_eq!(v.len(), 2);
-            match v[0] {
-                Value::Integer(1) => (),
-                _ => panic!(),
+    assert_eq!(
+        parse("\"foo bar\""),
+        Ok(Value::String("foo bar".to_string()))
+    );
+
+    assert_eq!(
+        parse("[1, true]"),
+        Ok(Value::Array(vec![Value::Integer(1), Value::Boolean(true)])),
+    );
+
+    assert_eq!(
+        parse(
+            r#"
+            /* comment 1 is a
+               multi-line comment */
+            {
+                // comment 2
+                "foo": 1, // comment 3
+                "bar": true,
             }
-            match v[1] {
-                Value::Boolean(true) => (),
-                _ => panic!(),
-            }
-        }
-        _ => panic!(),
-    };
-
-    let json = r#"
-    /* comment 1 is a
-       multi-line comment */
-    {
-        // comment 2
-        "foo": 1, // comment 3
-        "bar": true,
-    }
-    // comment 4
-    "#;
-    match parse(json.to_string()) {
-        Ok(Value::Object(m)) => {
-            assert_eq!(m.len(), 2);
-            match m.get("foo") {
-                Some(Value::Integer(1)) => (),
-                _ => panic!(),
-            }
-            match m.get("bar") {
-                Some(Value::Boolean(true)) => (),
-                _ => panic!(),
-            }
-        }
-        _ => panic!(),
-    };
+            // comment 4
+            "#
+        ),
+        Ok(Value::Object({
+            let mut m = HashMap::new();
+            m.insert("foo".to_string(), Value::Integer(1));
+            m.insert("bar".to_string(), Value::Boolean(true));
+            m
+        })),
+    );
 }

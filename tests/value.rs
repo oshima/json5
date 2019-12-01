@@ -16,10 +16,10 @@ fn index() {
     let object = Value::Object({
         let mut map = HashMap::new();
         map.insert("foo".to_string(), Value::Integer(10));
-        map.insert("bar".to_string(), Value::Array(vec![
-            Value::Integer(20),
-            Value::Integer(30),
-        ]));
+        map.insert(
+            "bar".to_string(),
+            Value::Array(vec![Value::Integer(20), Value::Integer(30)]),
+        );
         map
     });
 

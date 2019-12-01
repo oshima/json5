@@ -28,6 +28,13 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn expect_sequence(&mut self, s: &str) -> Result<(), Error> {
+        for ch in s.chars() {
+            self.expect(ch)?;
+        }
+        Ok(())
+    }
+
     pub fn skip_comments(&mut self) -> Result<(), Error> {
         while self.ch.is_ascii_whitespace() {
             self.next();
@@ -67,7 +74,7 @@ impl<'a> Parser<'a> {
                     if self.ch == '/' {
                         break;
                     }
-                },
+                }
                 '\0' => return Err(Error::UnexpectedEndOfJson),
                 _ => self.next(),
             }
@@ -90,65 +97,70 @@ impl<'a> Parser<'a> {
 
     fn parse_null(&mut self) -> Result<Value, Error> {
         self.next();
-        self.expect('u')?;
-        self.expect('l')?;
-        self.expect('l')?;
+        self.expect_sequence("ull")?;
         Ok(Value::Null)
     }
 
     fn parse_boolean(&mut self) -> Result<Value, Error> {
         if self.ch == 't' {
             self.next();
-            self.expect('r')?;
-            self.expect('u')?;
-            self.expect('e')?;
+            self.expect_sequence("rue")?;
             Ok(Value::Boolean(true))
         } else {
             self.next();
-            self.expect('a')?;
-            self.expect('l')?;
-            self.expect('s')?;
-            self.expect('e')?;
+            self.expect_sequence("alse")?;
             Ok(Value::Boolean(false))
         }
     }
 
     fn parse_number(&mut self) -> Result<Value, Error> {
-        let mut s = String::new();
-        let mut is_float = false;
+        let mut s = String::with_capacity(16);
 
         if self.ch == '+' || self.ch == '-' {
             s.push(self.ch);
             self.next();
         }
 
-        if self.ch == 'I' {
+        if self.ch == '0' {
             self.next();
-            self.expect('n')?;
-            self.expect('f')?;
-            self.expect('i')?;
-            self.expect('n')?;
-            self.expect('i')?;
-            self.expect('t')?;
-            self.expect('y')?;
+            if self.ch == '0' {
+                return Err(Error::UnparseableNumber);
+            } else if self.ch == 'x' || self.ch == 'X' {
+                self.next();
+                loop {
+                    match self.ch {
+                        '0'..='9' | 'a'..='f' | 'A'..='F' => {}
+                        _ => break,
+                    }
+                    s.push(self.ch);
+                    self.next();
+                }
+                return match i32::from_str_radix(&s, 16) {
+                    Ok(i) => Ok(Value::Integer(i)),
+                    Err(_) => Err(Error::UnparseableNumber),
+                };
+            } else {
+                s.push('0');
+            }
+        } else if self.ch == 'I' {
+            self.next();
+            self.expect_sequence("nfinity")?;
             return if s == "-" {
                 Ok(Value::Float(std::f64::NEG_INFINITY))
             } else {
                 Ok(Value::Float(std::f64::INFINITY))
-            }
-        }
-
-        if self.ch == 'N' {
+            };
+        } else if self.ch == 'N' {
             self.next();
-            self.expect('a')?;
-            self.expect('N')?;
-            return Ok(Value::Float(std::f64::NAN))
+            self.expect_sequence("aN")?;
+            return Ok(Value::Float(std::f64::NAN));
         }
 
+        let mut is_float = false;
         loop {
             match self.ch {
-                '+' | '-' | '0'..='9' => {},
-                '.' | 'E' | 'e' => is_float = true,
+                '.' | 'e' | 'E' => is_float = true,
+                '+' | '-' | '0'..='9' => {}
                 _ => break,
             }
             s.push(self.ch);

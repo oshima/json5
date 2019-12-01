@@ -6,7 +6,7 @@ pub use crate::error::Error;
 use crate::parser::Parser;
 pub use crate::value::Value;
 
-pub fn parse(json: String) -> Result<Value, Error> {
+pub fn parse(json: &str) -> Result<Value, Error> {
     let mut parser = Parser {
         chars: json.chars(),
         ch: '\0',
