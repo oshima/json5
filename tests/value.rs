@@ -25,21 +25,23 @@ fn index() {
 
     assert!(null[0].is_null());
     assert!(integer[0].is_null());
-    assert!(array[0].as_bool().unwrap() == true);
-    assert!(array[3][1].as_i32().unwrap() == 5);
+    assert!(array[0].to_bool().unwrap() == true);
+    assert!(array[3][1].to_i32().unwrap() == 5);
     assert!(object[0].is_null());
-    assert!(object["foo"].as_i32().unwrap() == 10);
-    assert!(object["bar"][1].as_i32().unwrap() == 30);
-    assert!(object["bar"][1].as_string().is_none());
+    assert!(object["foo"].to_i32().unwrap() == 10);
+    assert!(object["bar"][1].to_i32().unwrap() == 30);
+    assert!(object["bar"][1].to_string().is_none());
 }
 
 #[test]
-fn as_i32() {
-    assert!(Value::Integer(-3).as_i32().unwrap() == -3);
-    assert!(Value::Boolean(true).as_i32().is_none());
+fn to_i32() {
+    assert!(Value::Integer(-3).to_i32().unwrap() == -3);
+    assert!(Value::Float(12.3).to_i32().unwrap() == 12);
+    assert!(Value::Boolean(true).to_i32().is_none());
 }
 
 #[test]
-fn as_f64() {
-    assert!(Value::Float(1.23).as_f64().unwrap() == 1.23);
+fn to_f64() {
+    assert!(Value::Integer(55).to_f64().unwrap() == 55.0);
+    assert!(Value::Float(1.23).to_f64().unwrap() == 1.23);
 }

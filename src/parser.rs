@@ -41,45 +41,40 @@ impl<'a> Parser<'a> {
         }
         while self.ch == '/' {
             self.next();
-            match self.ch {
-                '/' => self.skip_single_line_comment(),
-                '*' => self.skip_multi_line_comment()?,
-                _ => return Err(Error::UnexpectedCharacter),
+            if self.ch == '/' {
+                self.next();
+                loop {
+                    if self.ch == '\n' {
+                        self.next();
+                        break;
+                    } else if self.ch == '\0' {
+                        return Ok(());
+                    } else {
+                        self.next();
+                    }
+                }
+            } else if self.ch == '*' {
+                self.next();
+                loop {
+                    if self.ch == '*' {
+                        self.next();
+                        if self.ch == '/' {
+                            self.next();
+                            break;
+                        }
+                    } else if self.ch == '\0' {
+                        return Err(Error::UnexpectedEndOfJson);
+                    } else {
+                        self.next();
+                    }
+                }
+            } else {
+                return Err(Error::UnexpectedCharacter);
             }
             while self.ch.is_ascii_whitespace() {
                 self.next();
             }
         }
-        Ok(())
-    }
-
-    fn skip_single_line_comment(&mut self) {
-        self.next();
-        loop {
-            match self.ch {
-                '\n' => break,
-                '\0' => return,
-                _ => self.next(),
-            }
-        }
-        self.next();
-    }
-
-    fn skip_multi_line_comment(&mut self) -> Result<(), Error> {
-        self.next();
-        loop {
-            match self.ch {
-                '*' => {
-                    self.next();
-                    if self.ch == '/' {
-                        break;
-                    }
-                }
-                '\0' => return Err(Error::UnexpectedEndOfJson),
-                _ => self.next(),
-            }
-        }
-        self.next();
         Ok(())
     }
 
@@ -129,7 +124,7 @@ impl<'a> Parser<'a> {
                 self.next();
                 loop {
                     match self.ch {
-                        '0'..='9' | 'a'..='f' | 'A'..='F' => {}
+                        '0'..='9' | 'a'..='f' | 'A'..='F' => (),
                         _ => break,
                     }
                     s.push(self.ch);
@@ -160,13 +155,12 @@ impl<'a> Parser<'a> {
         loop {
             match self.ch {
                 '.' | 'e' | 'E' => is_float = true,
-                '+' | '-' | '0'..='9' => {}
+                '+' | '-' | '0'..='9' => (),
                 _ => break,
             }
             s.push(self.ch);
             self.next();
         }
-
         if is_float {
             match f64::from_str(&s) {
                 Ok(f) => Ok(Value::Float(f)),
@@ -181,19 +175,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_string(&mut self) -> Result<Value, Error> {
-        let mut s = String::new();
+        let mut s = String::with_capacity(64);
 
         self.next();
 
         while self.ch != '"' {
-            match self.ch {
-                '"' => break,
-                '\0' => return Err(Error::UnexpectedEndOfJson),
-                _ => s.push(self.ch),
+            if self.ch == '\0' {
+                return Err(Error::UnexpectedEndOfJson);
             }
+            s.push(self.ch);
             self.next();
         }
         self.next();
+
         Ok(Value::String(s))
     }
 
@@ -217,6 +211,7 @@ impl<'a> Parser<'a> {
             self.skip_comments()?;
         }
         self.next();
+
         Ok(Value::Array(v))
     }
 
@@ -250,6 +245,7 @@ impl<'a> Parser<'a> {
             self.skip_comments()?;
         }
         self.next();
+
         Ok(Value::Object(m))
     }
 }

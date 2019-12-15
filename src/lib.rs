@@ -20,8 +20,7 @@ pub fn parse(json: &str) -> Result<Value, Error> {
     parser.skip_comments()?;
 
     if parser.ch != '\0' {
-        Err(Error::UnexpectedCharacter)
-    } else {
-        Ok(value)
+        return Err(Error::UnexpectedCharacter);
     }
+    Ok(value)
 }

@@ -77,42 +77,44 @@ impl Value {
         }
     }
 
-    pub fn as_bool(&self) -> Option<bool> {
+    pub fn to_bool(&self) -> Option<bool> {
         match self {
             Self::Boolean(b) => Some(*b),
             _ => None,
         }
     }
 
-    pub fn as_i32(&self) -> Option<i32> {
+    pub fn to_i32(&self) -> Option<i32> {
         match self {
             Self::Integer(i) => Some(*i),
+            Self::Float(f) => Some(*f as i32),
             _ => None,
         }
     }
 
-    pub fn as_f64(&self) -> Option<f64> {
+    pub fn to_f64(&self) -> Option<f64> {
         match self {
+            Self::Integer(i) => Some(*i as f64),
             Self::Float(f) => Some(*f),
             _ => None,
         }
     }
 
-    pub fn as_string(&self) -> Option<&String> {
+    pub fn to_string(&self) -> Option<&String> {
         match self {
             Self::String(s) => Some(s),
             _ => None,
         }
     }
 
-    pub fn as_vec(&self) -> Option<&Vec<Self>> {
+    pub fn to_vec(&self) -> Option<&Vec<Self>> {
         match self {
             Self::Array(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_map(&self) -> Option<&HashMap<String, Self>> {
+    pub fn to_map(&self) -> Option<&HashMap<String, Self>> {
         match self {
             Self::Object(m) => Some(m),
             _ => None,
