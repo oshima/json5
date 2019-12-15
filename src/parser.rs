@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter::Peekable;
 use std::str::Chars;
 use std::str::FromStr;
 
@@ -6,7 +7,7 @@ use crate::error::Error;
 use crate::value::Value;
 
 pub struct Parser<'a> {
-    pub chars: Chars<'a>,
+    pub chars: Peekable<Chars<'a>>,
     pub ch: char,
 }
 
@@ -16,6 +17,13 @@ impl<'a> Parser<'a> {
             Some(ch) => ch,
             None => '\0',
         };
+    }
+
+    fn peek(&mut self) -> char {
+        match self.chars.peek() {
+            Some(ch) => *ch,
+            None => '\0',
+        }
     }
 
     fn expect(&mut self, ch: char) -> Result<(), Error> {
@@ -40,42 +48,45 @@ impl<'a> Parser<'a> {
             self.next();
         }
         while self.ch == '/' {
-            self.next();
-            if self.ch == '/' {
-                self.next();
-                loop {
-                    if self.ch == '\n' {
-                        self.next();
-                        break;
-                    } else if self.ch == '\0' {
-                        return Ok(());
-                    } else {
-                        self.next();
-                    }
-                }
-            } else if self.ch == '*' {
-                self.next();
-                loop {
-                    if self.ch == '*' {
-                        self.next();
-                        if self.ch == '/' {
-                            self.next();
-                            break;
-                        }
-                    } else if self.ch == '\0' {
-                        return Err(Error::UnexpectedEndOfJson);
-                    } else {
-                        self.next();
-                    }
-                }
-            } else {
-                return Err(Error::UnexpectedCharacter);
+            match self.peek() {
+                '/' => self.skip_single_line_comment(),
+                '*' => self.skip_multi_line_comment()?,
+                _ => return Err(Error::UnexpectedCharacter),
             }
             while self.ch.is_ascii_whitespace() {
                 self.next();
             }
         }
         Ok(())
+    }
+
+    fn skip_single_line_comment(&mut self) {
+        self.next();
+        self.next();
+        loop {
+            if self.ch == '\n' {
+                self.next();
+                return;
+            } else if self.ch == '\0' {
+                return;
+            }
+            self.next();
+        }
+    }
+
+    fn skip_multi_line_comment(&mut self) -> Result<(), Error> {
+        self.next();
+        self.next();
+        loop {
+            if self.ch == '*' && self.peek() == '/' {
+                self.next();
+                self.next();
+                return Ok(());
+            } else if self.ch == '\0' {
+                return Err(Error::UnexpectedEndOfJson);
+            }
+            self.next();
+        }
     }
 
     pub fn parse_value(&mut self) -> Result<Value, Error> {
@@ -109,69 +120,95 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_number(&mut self) -> Result<Value, Error> {
-        let mut s = String::with_capacity(16);
+        let sign = match self.ch {
+            '+' | '-' => Some(self.ch),
+            _ => None,
+        };
 
-        if self.ch == '+' || self.ch == '-' {
-            s.push(self.ch);
+        if sign.is_some() {
             self.next();
         }
 
-        if self.ch == '0' {
-            self.next();
-            if self.ch == '0' {
-                return Err(Error::UnparseableNumber);
-            } else if self.ch == 'x' || self.ch == 'X' {
-                self.next();
-                loop {
-                    match self.ch {
-                        '0'..='9' | 'a'..='f' | 'A'..='F' => (),
-                        _ => break,
-                    }
-                    s.push(self.ch);
-                    self.next();
-                }
-                return match i32::from_str_radix(&s, 16) {
-                    Ok(i) => Ok(Value::Integer(i)),
-                    Err(_) => Err(Error::UnparseableNumber),
-                };
-            } else {
-                s.push('0');
+        match self.ch {
+            '0' => match self.peek() {
+                '0'..='9' => Err(Error::UnparseableNumber),
+                'x' | 'X' => self.parse_hex_number(sign),
+                _ => self.parse_decimal_number(sign),
+            },
+            'I' => self.parse_infinity(sign),
+            'N' => self.parse_nan(),
+            _ => self.parse_decimal_number(sign),
+        }
+    }
+
+    fn parse_hex_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
+        let mut buf = String::with_capacity(16);
+
+        if let Some(ch) = sign {
+            buf.push(ch);
+        }
+        self.next();
+        self.next();
+
+        loop {
+            match self.ch {
+                '0'..='9' | 'a'..='f' | 'A'..='F' => (),
+                _ => break,
             }
-        } else if self.ch == 'I' {
+            buf.push(self.ch);
             self.next();
-            self.expect_sequence("nfinity")?;
-            return if s == "-" {
-                Ok(Value::Float(std::f64::NEG_INFINITY))
-            } else {
-                Ok(Value::Float(std::f64::INFINITY))
-            };
-        } else if self.ch == 'N' {
-            self.next();
-            self.expect_sequence("aN")?;
-            return Ok(Value::Float(std::f64::NAN));
         }
 
+        return match i32::from_str_radix(&buf, 16) {
+            Ok(i) => Ok(Value::Integer(i)),
+            Err(_) => Err(Error::UnparseableNumber),
+        };
+    }
+
+    fn parse_decimal_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
         let mut is_float = false;
+        let mut buf = String::with_capacity(16);
+
+        if let Some(ch) = sign {
+            buf.push(ch);
+        }
+
         loop {
             match self.ch {
                 '.' | 'e' | 'E' => is_float = true,
                 '+' | '-' | '0'..='9' => (),
                 _ => break,
             }
-            s.push(self.ch);
+            buf.push(self.ch);
             self.next();
         }
+
         if is_float {
-            match f64::from_str(&s) {
+            match f64::from_str(&buf) {
                 Ok(f) => Ok(Value::Float(f)),
                 Err(_) => Err(Error::UnparseableNumber),
             }
         } else {
-            match i32::from_str(&s) {
+            match i32::from_str(&buf) {
                 Ok(i) => Ok(Value::Integer(i)),
                 Err(_) => Err(Error::UnparseableNumber),
             }
         }
+    }
+
+    fn parse_infinity(&mut self, sign: Option<char>) -> Result<Value, Error> {
+        self.next();
+        self.expect_sequence("nfinity")?;
+        match sign {
+            Some('-') => Ok(Value::Float(std::f64::NEG_INFINITY)),
+            _ => Ok(Value::Float(std::f64::INFINITY)),
+        }
+    }
+
+    fn parse_nan(&mut self) -> Result<Value, Error> {
+        self.next();
+        self.expect_sequence("aN")?;
+        Ok(Value::Float(std::f64::NAN))
     }
 
     fn parse_string(&mut self) -> Result<Value, Error> {

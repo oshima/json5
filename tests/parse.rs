@@ -28,6 +28,7 @@ fn it_works() {
     assert_eq!(parse("1.23e+1"), Ok(Value::Float(12.3)));
     assert_eq!(parse("123e-1"), Ok(Value::Float(12.3)));
     assert_eq!(parse("1.23E1"), Ok(Value::Float(12.3)));
+    assert_eq!(parse("-.33"), Ok(Value::Float(-0.33)));
     assert_eq!(parse("-9.9e2"), Ok(Value::Float(-990.0)));
     assert_eq!(parse("Infinity"), Ok(Value::Float(std::f64::INFINITY)));
     assert_eq!(parse("+Infinity"), Ok(Value::Float(std::f64::INFINITY)));

@@ -8,7 +8,7 @@ pub use crate::value::Value;
 
 pub fn parse(json: &str) -> Result<Value, Error> {
     let mut parser = Parser {
-        chars: json.chars(),
+        chars: json.chars().peekable(),
         ch: '\0',
     };
 
