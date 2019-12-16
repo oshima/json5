@@ -93,8 +93,8 @@ impl<'a> Parser<'a> {
         match self.ch {
             'n' => self.parse_null(),
             't' | 'f' => self.parse_boolean(),
-            '+' | '-' | '.' | '0'..='9' | 'I' | 'N' => self.parse_number(),
-            '"' => self.parse_string(),
+            '0'..='9' | '+' | '-' | '.' | 'I' | 'N' => self.parse_number(),
+            '"' | '\'' => self.parse_string(),
             '[' => self.parse_array(),
             '{' => self.parse_object(),
             _ => Err(Error::UnexpectedCharacter),
@@ -176,7 +176,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.ch {
                 '.' | 'e' | 'E' => is_float = true,
-                '+' | '-' | '0'..='9' => (),
+                '0'..='9' | '+' | '-' => (),
                 _ => break,
             }
             buf.push(self.ch);
@@ -212,11 +212,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_string(&mut self) -> Result<Value, Error> {
+        let mark = self.ch; // " or '
         let mut s = String::with_capacity(64);
 
         self.next();
 
-        while self.ch != '"' {
+        while self.ch != mark {
             if self.ch == '\0' {
                 return Err(Error::UnexpectedEndOfJson);
             }
