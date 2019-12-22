@@ -9,7 +9,7 @@ pub use crate::value::Value;
 pub fn parse(json: &str) -> Result<Value, Error> {
     let mut parser = Parser {
         chars: json.chars().peekable(),
-        ch: '\0',
+        ch: None,
     };
 
     parser.next();
@@ -19,7 +19,7 @@ pub fn parse(json: &str) -> Result<Value, Error> {
 
     parser.skip_comments()?;
 
-    if parser.ch != '\0' {
+    if parser.ch.is_some() {
         return Err(Error::UnexpectedCharacter);
     }
     Ok(value)

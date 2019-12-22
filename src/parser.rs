@@ -8,120 +8,129 @@ use crate::value::Value;
 
 pub struct Parser<'a> {
     pub chars: Peekable<Chars<'a>>,
-    pub ch: char,
+    pub ch: Option<char>,
 }
 
 impl<'a> Parser<'a> {
     pub fn next(&mut self) {
-        self.ch = match self.chars.next() {
-            Some(ch) => ch,
-            None => '\0',
-        };
+        self.ch = self.chars.next();
     }
 
-    fn peek(&mut self) -> char {
-        match self.chars.peek() {
-            Some(ch) => *ch,
-            None => '\0',
-        }
+    fn peek(&mut self) -> Option<&char> {
+        self.chars.peek()
     }
 
     fn expect(&mut self, ch: char) -> Result<(), Error> {
-        if self.ch == '\0' {
-            return Err(Error::UnexpectedEndOfJson);
-        } else if self.ch != ch {
-            return Err(Error::UnexpectedCharacter);
+        match self.ch {
+            None => Err(Error::UnexpectedEndOfJson),
+            Some(c) if c == ch => Ok(()),
+            _ => Err(Error::UnexpectedCharacter),
         }
+    }
+
+    fn consume(&mut self, ch: char) -> Result<(), Error> {
+        self.expect(ch)?;
         self.next();
         Ok(())
     }
 
-    fn expect_sequence(&mut self, s: &str) -> Result<(), Error> {
+    fn consume_sequence(&mut self, s: &str) -> Result<(), Error> {
         for ch in s.chars() {
             self.expect(ch)?;
+            self.next();
         }
         Ok(())
     }
 
     pub fn skip_comments(&mut self) -> Result<(), Error> {
-        while self.ch.is_ascii_whitespace() {
-            self.next();
-        }
-        while self.ch == '/' {
+        self.skip_whitespace();
+
+        while let Some('/') = self.ch {
             match self.peek() {
-                '/' => self.skip_single_line_comment(),
-                '*' => self.skip_multi_line_comment()?,
+                Some('/') => self.skip_single_line_comment(),
+                Some('*') => self.skip_multi_line_comment()?,
+                None => return Err(Error::UnexpectedEndOfJson),
                 _ => return Err(Error::UnexpectedCharacter),
             }
-            while self.ch.is_ascii_whitespace() {
-                self.next();
-            }
+            self.skip_whitespace();
         }
         Ok(())
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(c) = self.ch {
+            if !c.is_ascii_whitespace() {
+                return;
+            }
+            self.next();
+        }
     }
 
     fn skip_single_line_comment(&mut self) {
         self.next();
         self.next();
-        loop {
-            if self.ch == '\n' {
-                self.next();
-                return;
-            } else if self.ch == '\0' {
+
+        while let Some(c) = self.ch {
+            self.next();
+            if c == '\n' {
                 return;
             }
-            self.next();
         }
     }
 
     fn skip_multi_line_comment(&mut self) -> Result<(), Error> {
         self.next();
         self.next();
-        loop {
-            if self.ch == '*' && self.peek() == '/' {
-                self.next();
+
+        while let Some(c) = self.ch {
+            self.next();
+            if c != '*' {
+                continue;
+            }
+            if let Some('/') = self.ch {
                 self.next();
                 return Ok(());
-            } else if self.ch == '\0' {
-                return Err(Error::UnexpectedEndOfJson);
             }
-            self.next();
         }
+        Err(Error::UnexpectedEndOfJson)
     }
 
     pub fn parse_value(&mut self) -> Result<Value, Error> {
         match self.ch {
-            'n' => self.parse_null(),
-            't' | 'f' => self.parse_boolean(),
-            '0'..='9' | '+' | '-' | '.' | 'I' | 'N' => self.parse_number(),
-            '"' | '\'' => self.parse_string(),
-            '[' => self.parse_array(),
-            '{' => self.parse_object(),
-            _ => Err(Error::UnexpectedCharacter),
+            None => Err(Error::UnexpectedEndOfJson),
+            Some(c) => match c {
+                'n' => self.parse_null(),
+                't' | 'f' => self.parse_boolean(),
+                '0'..='9' | '+' | '-' | '.' | 'I' | 'N' => self.parse_number(),
+                '"' | '\'' => self.parse_string(),
+                '[' => self.parse_array(),
+                '{' => self.parse_object(),
+                _ => Err(Error::UnexpectedCharacter),
+            },
         }
     }
 
     fn parse_null(&mut self) -> Result<Value, Error> {
         self.next();
-        self.expect_sequence("ull")?;
+        self.consume_sequence("ull")?;
         Ok(Value::Null)
     }
 
     fn parse_boolean(&mut self) -> Result<Value, Error> {
-        if self.ch == 't' {
+        if self.ch.unwrap() == 't' {
             self.next();
-            self.expect_sequence("rue")?;
+            self.consume_sequence("rue")?;
             Ok(Value::Boolean(true))
         } else {
             self.next();
-            self.expect_sequence("alse")?;
+            self.consume_sequence("alse")?;
             Ok(Value::Boolean(false))
         }
     }
 
     fn parse_number(&mut self) -> Result<Value, Error> {
-        let sign = match self.ch {
-            '+' | '-' => Some(self.ch),
+        let sign = match self.ch.unwrap() {
+            '+' | '-' => self.ch,
             _ => None,
         };
 
@@ -130,56 +139,61 @@ impl<'a> Parser<'a> {
         }
 
         match self.ch {
-            '0' => match self.peek() {
-                '0'..='9' => Err(Error::UnparseableNumber),
-                'x' | 'X' => self.parse_hex_number(sign),
+            None => Err(Error::UnexpectedEndOfJson),
+            Some(c) => match c {
+                '0' => match self.peek() {
+                    None => self.parse_decimal_number(sign),
+                    Some(c) => match c {
+                        '0'..='9' => Err(Error::UnparseableNumber),
+                        'x' | 'X' => self.parse_hex_number(sign),
+                        _ => self.parse_decimal_number(sign),
+                    },
+                },
+                'I' => self.parse_infinity(sign),
+                'N' => self.parse_nan(),
                 _ => self.parse_decimal_number(sign),
             },
-            'I' => self.parse_infinity(sign),
-            'N' => self.parse_nan(),
-            _ => self.parse_decimal_number(sign),
         }
     }
 
     fn parse_hex_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
         let mut buf = String::with_capacity(16);
 
-        if let Some(ch) = sign {
-            buf.push(ch);
+        if let Some(c) = sign {
+            buf.push(c);
         }
         self.next();
         self.next();
 
-        loop {
-            match self.ch {
-                '0'..='9' | 'a'..='f' | 'A'..='F' => (),
-                _ => break,
+        while let Some(c) = self.ch {
+            if !c.is_ascii_hexdigit() {
+                break;
             }
-            buf.push(self.ch);
+            buf.push(c);
             self.next();
         }
 
-        return match i32::from_str_radix(&buf, 16) {
+        match i32::from_str_radix(&buf, 16) {
             Ok(i) => Ok(Value::Integer(i)),
             Err(_) => Err(Error::UnparseableNumber),
-        };
+        }
     }
 
     fn parse_decimal_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
         let mut is_float = false;
         let mut buf = String::with_capacity(16);
 
-        if let Some(ch) = sign {
-            buf.push(ch);
+        if let Some(c) = sign {
+            buf.push(c);
         }
 
-        loop {
-            match self.ch {
-                '.' | 'e' | 'E' => is_float = true,
+        while let Some(c) = self.ch {
+            match c {
                 '0'..='9' | '+' | '-' => (),
+                '.' | 'e' | 'E' => is_float = true,
                 _ => break,
             }
-            buf.push(self.ch);
+            buf.push(c);
             self.next();
         }
 
@@ -198,7 +212,7 @@ impl<'a> Parser<'a> {
 
     fn parse_infinity(&mut self, sign: Option<char>) -> Result<Value, Error> {
         self.next();
-        self.expect_sequence("nfinity")?;
+        self.consume_sequence("nfinity")?;
         match sign {
             Some('-') => Ok(Value::Float(std::f64::NEG_INFINITY)),
             _ => Ok(Value::Float(std::f64::INFINITY)),
@@ -207,26 +221,24 @@ impl<'a> Parser<'a> {
 
     fn parse_nan(&mut self) -> Result<Value, Error> {
         self.next();
-        self.expect_sequence("aN")?;
+        self.consume_sequence("aN")?;
         Ok(Value::Float(std::f64::NAN))
     }
 
     fn parse_string(&mut self) -> Result<Value, Error> {
-        let mark = self.ch; // " or '
+        let mark = self.ch.unwrap(); // " or '
         let mut s = String::with_capacity(64);
 
         self.next();
 
-        while self.ch != mark {
-            if self.ch == '\0' {
-                return Err(Error::UnexpectedEndOfJson);
-            }
-            s.push(self.ch);
+        while let Some(c) = self.ch {
             self.next();
+            if c == mark {
+                return Ok(Value::String(s));
+            }
+            s.push(c);
         }
-        self.next();
-
-        Ok(Value::String(s))
+        Err(Error::UnexpectedEndOfJson)
     }
 
     fn parse_array(&mut self) -> Result<Value, Error> {
@@ -235,22 +247,29 @@ impl<'a> Parser<'a> {
         self.next();
         self.skip_comments()?;
 
-        while self.ch != ']' {
-            let value = self.parse_value()?;
-            v.push(value);
+        while let Some(c) = self.ch {
+            if c == ']' {
+                self.next();
+                return Ok(Value::Array(v));
+            }
 
+            v.push(self.parse_value()?);
             self.skip_comments()?;
+
             match self.ch {
-                ',' => self.next(),
-                ']' => break,
-                '\0' => return Err(Error::UnexpectedEndOfJson),
+                None => break,
+                Some(']') => {
+                    self.next();
+                    return Ok(Value::Array(v));
+                }
+                Some(',') => {
+                    self.next();
+                    self.skip_comments()?;
+                }
                 _ => return Err(Error::UnexpectedCharacter),
             }
-            self.skip_comments()?;
         }
-        self.next();
-
-        Ok(Value::Array(v))
+        Err(Error::UnexpectedEndOfJson)
     }
 
     fn parse_object(&mut self) -> Result<Value, Error> {
@@ -259,7 +278,12 @@ impl<'a> Parser<'a> {
         self.next();
         self.skip_comments()?;
 
-        while self.ch != '}' {
+        while let Some(c) = self.ch {
+            if c == '}' {
+                self.next();
+                return Ok(Value::Object(m));
+            }
+
             let key = match self.parse_value() {
                 Ok(Value::String(s)) => s,
                 Err(e) => return Err(e),
@@ -267,23 +291,25 @@ impl<'a> Parser<'a> {
             };
 
             self.skip_comments()?;
-            self.expect(':')?;
+            self.consume(':')?;
             self.skip_comments()?;
 
-            let value = self.parse_value()?;
-            m.insert(key, value);
-
+            m.insert(key, self.parse_value()?);
             self.skip_comments()?;
+
             match self.ch {
-                ',' => self.next(),
-                '}' => break,
-                '\0' => return Err(Error::UnexpectedEndOfJson),
+                None => break,
+                Some('}') => {
+                    self.next();
+                    return Ok(Value::Object(m));
+                }
+                Some(',') => {
+                    self.next();
+                    self.skip_comments()?;
+                }
                 _ => return Err(Error::UnexpectedCharacter),
             }
-            self.skip_comments()?;
         }
-        self.next();
-
-        Ok(Value::Object(m))
+        Err(Error::UnexpectedEndOfJson)
     }
 }
