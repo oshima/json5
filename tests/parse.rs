@@ -42,8 +42,24 @@ fn it_works() {
         Ok(Value::String("foo bar".to_string()))
     );
     assert_eq!(
-        parse("\"こんにちは😁\""),
+        parse("'こんにちは😁'"),
         Ok(Value::String("こんにちは😁".to_string()))
+    );
+    assert_eq!(
+        parse("'\\x48\\x65\\x6c\\x6c\\x6f, world!'"),
+        Ok(Value::String("Hello, world!".to_string()))
+    );
+    assert_eq!(
+        parse("'\\uD83C\\uDFBC'"),
+        Ok(Value::String("🎼".to_string()))
+    );
+    assert_eq!(
+        parse("'aaa\\nbbb'"),
+        Ok(Value::String("aaa\nbbb".to_string()))
+    );
+    assert_eq!(
+        parse("'aaa\\\nbbb'"),
+        Ok(Value::String("aaabbb".to_string()))
     );
 
     assert_eq!(
