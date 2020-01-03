@@ -46,6 +46,10 @@ fn it_works() {
         Ok(Value::String("こんにちは😁".to_string()))
     );
     assert_eq!(
+        parse("'\\A\\C\\/\\D\\C'"),
+        Ok(Value::String("AC/DC".to_string()))
+    );
+    assert_eq!(
         parse("'\\x48\\x65\\x6c\\x6c\\x6f, world!'"),
         Ok(Value::String("Hello, world!".to_string()))
     );
@@ -64,6 +68,10 @@ fn it_works() {
 
     assert_eq!(
         parse("[1, true]"),
+        Ok(Value::Array(vec![Value::Integer(1), Value::Boolean(true)])),
+    );
+    assert_eq!(
+        parse("[1, true,]"),
         Ok(Value::Array(vec![Value::Integer(1), Value::Boolean(true)])),
     );
 

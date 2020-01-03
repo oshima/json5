@@ -145,21 +145,21 @@ impl<'a> Parser<'a> {
             None => Err(Error::UnexpectedEndOfJson),
             Some(c) => match c {
                 '0' => match self.peek() {
-                    None => self.parse_decimal_number(sign),
+                    None => self.parse_decimal_literal(sign),
                     Some(c) => match c {
                         '0'..='9' => Err(Error::UnparseableNumber),
-                        'x' | 'X' => self.parse_hex_number(sign),
-                        _ => self.parse_decimal_number(sign),
+                        'x' | 'X' => self.parse_hex_integer_literal(sign),
+                        _ => self.parse_decimal_literal(sign),
                     },
                 },
                 'I' => self.parse_infinity(sign),
                 'N' => self.parse_nan(),
-                _ => self.parse_decimal_number(sign),
+                _ => self.parse_decimal_literal(sign),
             },
         }
     }
 
-    fn parse_hex_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
+    fn parse_hex_integer_literal(&mut self, sign: Option<char>) -> Result<Value, Error> {
         let mut buf = String::with_capacity(16);
 
         if let Some(c) = sign {
@@ -182,7 +182,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_decimal_number(&mut self, sign: Option<char>) -> Result<Value, Error> {
+    fn parse_decimal_literal(&mut self, sign: Option<char>) -> Result<Value, Error> {
         let mut is_float = false;
         let mut buf = String::with_capacity(16);
 
@@ -240,10 +240,14 @@ impl<'a> Parser<'a> {
                 '\\' => match self.peek() {
                     None => break,
                     Some(c) => match c {
-                        'x' => s.push_str(&self.parse_basic_latin_escape()?),
-                        'u' => s.push_str(&self.parse_basic_multilingual_plane_escape()?),
+                        'x' => {
+                            s.push_str(&self.parse_hex_escape_sequence()?);
+                        }
+                        'u' => {
+                            s.push_str(&self.parse_unicode_escape_sequence()?);
+                        }
                         '\'' | '"' | '\\' | 'b' | 'f' | 'n' | 'r' | 't' | 'v' | '0' => {
-                            s.push(self.parse_popular_character_escape(c));
+                            s.push(self.parse_character_escape_sequence(c));
                         }
                         '\u{000A}' | '\u{000D}' | '\u{2028}' | '\u{2029}' => {
                             self.skip_line_continuation(c);
@@ -268,43 +272,43 @@ impl<'a> Parser<'a> {
         Err(Error::UnexpectedEndOfJson)
     }
 
-    fn parse_hex_utf8(&mut self) -> Result<u8, Error> {
-        let mut num: u32 = 0;
+    fn parse_two_hex_digits(&mut self) -> Result<u8, Error> {
+        let mut buf = String::with_capacity(2);
 
         for _ in 0..2 {
             match self.ch {
                 None => return Err(Error::UnexpectedEndOfJson),
-                Some(c) => match c.to_digit(16) {
-                    None => return Err(Error::UnexpectedCharacter),
-                    Some(n) => num = num * 16 + n,
-                },
+                Some(c) => buf.push(c),
             }
             self.next();
         }
-        Ok(num as u8)
+        match u8::from_str_radix(&buf, 16) {
+            Ok(n) => Ok(n),
+            Err(_) => Err(Error::UnexpectedCharacter),
+        }
     }
 
-    fn parse_hex_utf16(&mut self) -> Result<u16, Error> {
-        let mut num: u32 = 0;
+    fn parse_four_hex_digits(&mut self) -> Result<u16, Error> {
+        let mut buf = String::with_capacity(4);
 
         for _ in 0..4 {
             match self.ch {
                 None => return Err(Error::UnexpectedEndOfJson),
-                Some(c) => match c.to_digit(16) {
-                    None => return Err(Error::UnexpectedCharacter),
-                    Some(n) => num = num * 16 + n,
-                },
+                Some(c) => buf.push(c),
             }
             self.next();
         }
-        Ok(num as u16)
+        match u16::from_str_radix(&buf, 16) {
+            Ok(n) => Ok(n),
+            Err(_) => Err(Error::UnexpectedCharacter),
+        }
     }
 
-    fn parse_basic_latin_escape(&mut self) -> Result<String, Error> {
+    fn parse_hex_escape_sequence(&mut self) -> Result<String, Error> {
         self.next();
         self.next();
 
-        let vec = vec![self.parse_hex_utf8()?];
+        let vec = vec![self.parse_two_hex_digits()?];
 
         match String::from_utf8(vec) {
             Err(_) => Err(Error::UnexpectedCharacter),
@@ -312,17 +316,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_basic_multilingual_plane_escape(&mut self) -> Result<String, Error> {
+    fn parse_unicode_escape_sequence(&mut self) -> Result<String, Error> {
         self.next();
         self.next();
 
-        let mut vec = vec![self.parse_hex_utf16()?];
+        let mut vec = vec![self.parse_four_hex_digits()?];
 
         // surrogate pair
         if 0xD800 <= vec[0] && vec[0] <= 0xDBFF {
-            self.consume('\\')?;
-            self.consume('u')?;
-            vec.push(self.parse_hex_utf16()?);
+            self.consume_sequence("\\u")?;
+            vec.push(self.parse_four_hex_digits()?);
         }
 
         match String::from_utf16(&vec) {
@@ -331,7 +334,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_popular_character_escape(&mut self, c: char) -> char {
+    fn parse_character_escape_sequence(&mut self, c: char) -> char {
         self.next();
         self.next();
 
@@ -354,11 +357,10 @@ impl<'a> Parser<'a> {
         self.next();
         self.next();
 
-        if c != '\u{000D}' {
-            return;
-        }
-        if let Some('\u{000A}') = self.ch {
-            self.next();
+        if c == '\u{000D}' {
+            if let Some('\u{000A}') = self.ch {
+                self.next();
+            }
         }
     }
 
